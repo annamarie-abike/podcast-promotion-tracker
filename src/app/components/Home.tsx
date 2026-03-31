@@ -9,6 +9,7 @@ import { Badge } from "./ui/badge";
 import { useApp, Episode } from "../context/AppContext";
 import { PromotionPlan } from "./PromotionPlan";
 import { TrophyShelf } from "./TrophyShelf";
+import { ContentShowdown } from "./ContentShowdown";
 
 const stages = [
   { value: "planning", label: "Planning", color: "bg-gray-400" },
@@ -85,7 +86,7 @@ function getCountdown(releaseDate: string): { days: number; hours: number; minut
 }
 
 export function Home() {
-  const { episodes, addEpisode, updateEpisode, assets, addAsset } = useApp();
+  const { episodes, addEpisode, updateEpisode, assets, addAsset, showdowns } = useApp();
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(episodes[0]?.id || null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -217,9 +218,6 @@ export function Home() {
     <>
       {!isDetailView ? (
         <>
-          {/* Trophy Shelf - Above Dashboard */}
-          {showTrophyShelf && <TrophyShelf episodes={episodes} />}
-          
           {/* Main Dashboard View */}
           <div className="flex gap-6 h-[calc(100vh-200px)]">
             {/* Left Panel - Episode List */}
@@ -704,6 +702,9 @@ export function Home() {
               )}
             </div>
           </div>
+
+          {/* Trophy Shelf - Bottom of Home Page */}
+          {showTrophyShelf && <TrophyShelf episodes={episodes} showdowns={showdowns} />}
         </>
       ) : (
         /* Full-Page Episode Detail View */
@@ -770,131 +771,136 @@ export function Home() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto pt-6 space-y-6">
-              {/* Promotion Plan */}
-              <div>
-                <PromotionPlan
-                  episode={selectedEpisode}
-                  assets={episodeAssets}
-                  onUpdateEpisode={updateEpisode}
-                  onAddAsset={(asset, callback) => {
-                    const newAssetId = `asset-${Date.now()}`;
-                    const newAsset = {
-                      ...asset,
-                      id: newAssetId,
-                      addedDate: new Date().toISOString().split('T')[0]
-                    };
-                    addAsset(newAsset);
-                    callback(newAssetId);
-                  }}
-                />
+
+              {/* Two-column: Plan (left) + Library (right) */}
+              <div className="flex gap-6 items-start">
+
+                {/* Left: Promotion Plan + Progress */}
+                <div className="flex-1 min-w-0 space-y-4">
+                  <PromotionPlan
+                    episode={selectedEpisode}
+                    assets={episodeAssets}
+                    onUpdateEpisode={updateEpisode}
+                    onAddAsset={(asset, callback) => {
+                      const newAssetId = `asset-${Date.now()}`;
+                      const newAsset = {
+                        ...asset,
+                        id: newAssetId,
+                        addedDate: new Date().toISOString().split('T')[0]
+                      };
+                      addAsset(newAsset);
+                      callback(newAssetId);
+                    }}
+                  />
+
+                  {/* 7-Day Promotion Progress */}
+                  {(selectedEpisode.stage === "in-progress" || selectedEpisode.completedDays.length > 0) && (
+                    <Card>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-medium text-gray-900">Promotion Progress</h3>
+                          <span className="text-sm text-gray-600">
+                            Day {selectedEpisode.completedDays.length} of 7
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+                            const isCompleted = selectedEpisode.completedDays.includes(day);
+                            return (
+                              <div
+                                key={day}
+                                className={`flex-1 h-10 rounded-md flex items-center justify-center transition-colors ${
+                                  isCompleted
+                                    ? "bg-green-500 text-white"
+                                    : "bg-gray-100 text-gray-400"
+                                }`}
+                              >
+                                {isCompleted ? (
+                                  <CheckCircle2 className="size-4" />
+                                ) : (
+                                  <Circle className="size-4" />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+
+                {/* Right: Episode Library (sticky) */}
+                <div className="w-72 flex-shrink-0 sticky top-0">
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-medium text-gray-900">Episode Library</h3>
+                        <Badge variant="secondary" className="text-xs">
+                          {episodeAssets.length} {episodeAssets.length === 1 ? 'asset' : 'assets'}
+                        </Badge>
+                      </div>
+
+                      {episodeAssets.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <LinkIcon className="size-10 mx-auto mb-2 text-gray-300" />
+                          <p className="text-sm">No assets yet</p>
+                          <p className="text-xs mt-1 text-gray-400">Assets from the Asset Library will appear here</p>
+                        </div>
+                      ) : (
+                        <div>
+                        <p className="text-xs text-gray-400 mb-2">Drag any asset into a day's content field</p>
+                        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                          {episodeAssets.map((asset) => {
+                            const assetType = assetTypes.find(t => t.value === asset.type);
+                            const IconComponent = assetType?.icon || LinkIcon;
+                            return (
+                              <div
+                                key={asset.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('assetId', asset.id);
+                                  e.dataTransfer.effectAllowed = 'copy';
+                                }}
+                                className="group relative flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/40 transition-colors cursor-grab active:cursor-grabbing active:opacity-60 active:border-blue-400"
+                              >
+                                {/* Hover tooltip */}
+                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 hidden group-hover:flex items-center gap-1 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none z-10">
+                                  Drag to assign to a day
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                                </div>
+                                <div className="size-8 rounded bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                  <IconComponent className="size-4 text-blue-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate">{asset.name}</p>
+                                  <p className="text-xs text-gray-500 truncate">{asset.url}</p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button variant="ghost" size="sm" className="size-8 p-0"
+                                    onClick={() => copyToClipboard(asset.url, asset.id)}>
+                                    {copiedId === asset.id
+                                      ? <Check className="size-4 text-green-600" />
+                                      : <Copy className="size-4" />}
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="size-8 p-0"
+                                    onClick={() => window.open(asset.url, '_blank')}>
+                                    <ExternalLink className="size-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
 
-              {/* 7-Day Promotion Progress */}
-              {(selectedEpisode.stage === "in-progress" || selectedEpisode.completedDays.length > 0) && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium text-gray-900">Promotion Progress</h3>
-                      <span className="text-sm text-gray-600">
-                        Day {selectedEpisode.completedDays.length} of 7
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      {[1, 2, 3, 4, 5, 6, 7].map((day) => {
-                        const isCompleted = selectedEpisode.completedDays.includes(day);
-                        return (
-                          <div
-                            key={day}
-                            className={`flex-1 h-10 rounded-md flex items-center justify-center transition-colors ${
-                              isCompleted
-                                ? "bg-green-500 text-white"
-                                : "bg-gray-100 text-gray-400"
-                            }`}
-                          >
-                            {isCompleted ? (
-                              <CheckCircle2 className="size-4" />
-                            ) : (
-                              <Circle className="size-4" />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {/* Content Showdown — at the bottom */}
+              <ContentShowdown episode={selectedEpisode} assets={episodeAssets} />
 
-              {/* Episode Library */}
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-medium text-gray-900">Episode Library</h3>
-                    <Badge variant="secondary" className="text-xs">
-                      {episodeAssets.length} {episodeAssets.length === 1 ? 'asset' : 'assets'}
-                    </Badge>
-                  </div>
-                  
-                  {episodeAssets.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <LinkIcon className="size-12 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">No assets for this episode yet</p>
-                      <p className="text-xs mt-1">Assets added to the Asset Library will appear here</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {episodeAssets.map((asset) => {
-                        const assetType = assetTypes.find(t => t.value === asset.type);
-                        const IconComponent = assetType?.icon || LinkIcon;
-                        
-                        return (
-                          <div
-                            key={asset.id}
-                            className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="flex-shrink-0">
-                              <div className="size-8 rounded bg-blue-50 flex items-center justify-center">
-                                <IconComponent className="size-4 text-blue-600" />
-                              </div>
-                            </div>
-                            
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {asset.name}
-                              </p>
-                              <p className="text-xs text-gray-500 truncate">
-                                {asset.url}
-                              </p>
-                            </div>
-
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="size-8 p-0"
-                                onClick={() => copyToClipboard(asset.url, asset.id)}
-                              >
-                                {copiedId === asset.id ? (
-                                  <Check className="size-4 text-green-600" />
-                                ) : (
-                                  <Copy className="size-4" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="size-8 p-0"
-                                onClick={() => window.open(asset.url, '_blank')}
-                              >
-                                <ExternalLink className="size-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
             </div>
           </div>
         )

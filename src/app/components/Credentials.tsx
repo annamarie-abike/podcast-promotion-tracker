@@ -80,6 +80,7 @@ export function Credentials() {
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [customPlatformName, setCustomPlatformName] = useState("");
   const [formData, setFormData] = useState({
     platform: "",
     category: "",
@@ -119,6 +120,7 @@ export function Credentials() {
 
   const handleEdit = (credential: Credential) => {
     setEditingId(credential.id);
+    setCustomPlatformName("");
     setFormData({
       platform: credential.platform,
       category: credential.category,
@@ -149,6 +151,7 @@ export function Credentials() {
   const handleDialogClose = () => {
     setIsAddDialogOpen(false);
     setEditingId(null);
+    setCustomPlatformName("");
     setFormData({ platform: "", category: "", username: "", password: "", notes: "" });
   };
 
@@ -213,9 +216,13 @@ export function Credentials() {
                 {formData.platform === "Custom" && (
                   <Input
                     placeholder="Enter custom platform name"
-                    value={formData.platform === "Custom" ? "" : formData.platform}
-                    onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
+                    value={customPlatformName}
+                    onChange={(e) => {
+                      setCustomPlatformName(e.target.value);
+                      setFormData({ ...formData, platform: e.target.value || "Custom" });
+                    }}
                     className="mt-2"
+                    autoFocus
                   />
                 )}
               </div>

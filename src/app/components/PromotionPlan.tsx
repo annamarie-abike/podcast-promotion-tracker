@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -6,7 +6,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { ChevronDown, ChevronUp, Target, Calendar, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Target, Calendar, Plus, Video, Image as ImageIcon, FileText, FolderOpen, Link as LinkIcon, X } from "lucide-react";
 import { Episode, PromotionDay, Asset } from "../context/AppContext";
 
 interface PromotionPlanProps {
@@ -29,9 +29,118 @@ const platforms = [
   "Other"
 ];
 
+const assetTypeIcons: Record<string, React.ElementType> = {
+  recording: Video,
+  video: Video,
+  image: ImageIcon,
+  document: FileText,
+  folder: FolderOpen,
+};
+
+interface AssetDropZoneProps {
+  dayNumber: number;
+  assetId?: string;
+  assets: Asset[];
+  isDragOver: boolean;
+  isGlobalDragging: boolean;
+  required?: boolean;
+  onDragOver: () => void;
+  onDragLeave: () => void;
+  onDrop: (assetId: string) => void;
+  onClear: () => void;
+}
+
+function AssetDropZone({ dayNumber, assetId, assets, isDragOver, isGlobalDragging, required, onDragOver, onDragLeave, onDrop, onClear }: AssetDropZoneProps) {
+  const assigned = assets.find(a => a.id === assetId);
+  const IconComponent = assigned ? (assetTypeIcons[assigned.type] || LinkIcon) : LinkIcon;
+
+  // Pulsing ready state: dragging has started somewhere but not yet over this zone
+  const isReady = isGlobalDragging && !isDragOver && !assigned;
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData('assetId');
+        if (id) onDrop(id);
+      }}
+      className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-all duration-150 ${
+        isDragOver
+          ? 'border-blue-400 bg-blue-50 scale-[1.01]'
+          : isReady
+          ? 'border-blue-300 bg-blue-50 animate-pulse'
+          : assigned
+          ? 'border-gray-200 bg-white'
+          : 'border-dashed border-gray-300 bg-gray-50'
+      }`}
+    >
+      {/* Icon slot */}
+      <div className={`size-8 rounded flex items-center justify-center flex-shrink-0 ${
+        isDragOver || isReady ? 'bg-blue-100' : assigned ? 'bg-blue-50' : 'bg-gray-100'
+      }`}>
+        <IconComponent className={`size-4 ${isDragOver || isReady ? 'text-blue-500' : assigned ? 'text-blue-600' : 'text-gray-400'}`} />
+      </div>
+
+      {/* Text slot */}
+      <div className="flex-1 min-w-0">
+        {isDragOver ? (
+          <p className="text-sm font-semibold text-blue-600">Drop here ↓</p>
+        ) : isReady ? (
+          <p className="text-sm font-medium text-blue-500">Drop here ↓</p>
+        ) : assigned ? (
+          <>
+            <p className="text-sm font-medium text-gray-900 truncate">{assigned.name}</p>
+            <p className="text-xs text-gray-500 truncate">{assigned.url}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500">Drag from the library →</p>
+            <p className="text-xs text-gray-400">or use the dropdown below</p>
+          </>
+        )}
+      </div>
+
+      {/* Clear button */}
+      {assigned && !isDragOver && (
+        <button
+          onClick={onClear}
+          className="size-6 flex items-center justify-center rounded hover:bg-red-50 text-gray-300 hover:text-red-400 flex-shrink-0 transition-colors"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: PromotionPlanProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentDay, setCurrentDay] = useState(1);
+  const [slideDir, setSlideDir] = useState<"left" | "right">("right");
+  const [animKey, setAnimKey] = useState(0);
+  const prevDayRef = useRef(1);
+  const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+  const [showConfirmPrompt, setShowConfirmPrompt] = useState(false);
+  const prevCompleteRef = useRef<{ day: number; complete: boolean }>({ day: 0, complete: false });
+  const hasInitializedDay = useRef(false);
+
+  useEffect(() => {
+    const onStart = () => setIsGlobalDragging(true);
+    const onEnd = () => { setIsGlobalDragging(false); setDragOverDay(null); };
+    window.addEventListener('dragstart', onStart);
+    window.addEventListener('dragend', onEnd);
+    return () => { window.removeEventListener('dragstart', onStart); window.removeEventListener('dragend', onEnd); };
+  }, []);
+
+  const goToDay = (day: number) => {
+    setSlideDir(day > prevDayRef.current ? "right" : "left");
+    prevDayRef.current = day;
+    setCurrentDay(day);
+    setAnimKey(k => k + 1);
+  };
   const [isStartDialogOpen, setIsStartDialogOpen] = useState(false);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [isAddingAsset, setIsAddingAsset] = useState<number | null>(null);
@@ -107,14 +216,12 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
   const handleAddInlineAsset = (dayNumber: number) => {
     if (!newAssetUrl || !newAssetName || !onAddAsset) return;
 
-    // Generate a unique ID for the new asset
-    const newAssetId = `asset-${Date.now()}`;
-    
     const newAsset: Omit<Asset, "id"> = {
       name: newAssetName,
       url: newAssetUrl,
       type: "other",
-      episode: episode.name
+      episode: episode.name,
+      addedDate: new Date().toISOString().split('T')[0]
     };
 
     onAddAsset(newAsset, (assetId) => {
@@ -210,6 +317,18 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
                 <Label htmlFor={`asset-${day.day}`}>
                   Content Asset <span className="text-red-500">*</span>
                 </Label>
+                <AssetDropZone
+                  dayNumber={day.day}
+                  assetId={day.assetId}
+                  assets={assets}
+                  isDragOver={dragOverDay === day.day}
+                  required
+                  isGlobalDragging={isGlobalDragging}
+                  onDragOver={() => setDragOverDay(day.day)}
+                  onDragLeave={() => setDragOverDay(null)}
+                  onDrop={(id) => { updateDayPlan(day.day, { assetId: id }); setDragOverDay(null); }}
+                  onClear={() => updateDayPlan(day.day, { assetId: undefined })}
+                />
                 <Select
                   value={day.assetId || ""}
                   onValueChange={(value) => updateDayPlan(day.day, { assetId: value })}
@@ -337,6 +456,17 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
                 <Label htmlFor={`asset-${day.day}`}>
                   Content Asset <span className="text-gray-400">(optional)</span>
                 </Label>
+                <AssetDropZone
+                  dayNumber={day.day}
+                  assetId={day.assetId}
+                  assets={assets}
+                  isDragOver={dragOverDay === day.day}
+                  isGlobalDragging={isGlobalDragging}
+                  onDragOver={() => setDragOverDay(day.day)}
+                  onDragLeave={() => setDragOverDay(null)}
+                  onDrop={(id) => { updateDayPlan(day.day, { assetId: id }); setDragOverDay(null); }}
+                  onClear={() => updateDayPlan(day.day, { assetId: undefined })}
+                />
                 <Select
                   value={day.assetId || ""}
                   onValueChange={(value) => updateDayPlan(day.day, { assetId: value })}
@@ -483,83 +613,99 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
 
   return (
     <div className="px-2 space-y-4">
-      {/* Header with collapse button */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Target className="size-4 text-blue-700" />
-              <h3 className="font-medium text-gray-900">Promotion Plan</h3>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsExpanded(false)}
-              className="h-8"
-            >
-              <ChevronUp className="size-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 pb-1">
+        <div className="flex items-center gap-2">
+          <Target className="size-4 text-blue-700" />
+          <h3 className="font-semibold text-gray-900">Promotion Plan</h3>
+          <span className="text-xs text-gray-400 font-normal">
+            {promotionPlan.filter(day => {
+              const hasPlatform = day.platform;
+              return day.isManualPost !== false
+                ? day.assetId && day.caption && hasPlatform
+                : day.scheduledPostLink && hasPlatform;
+            }).length} / 7 days complete
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={handleStartPromotionClick}
+            className={`h-8 text-xs px-3 ${isPlanComplete ? "" : "opacity-70"}`}
+          >
+            <Calendar className="size-3 mr-1.5" />
+            Start Promotion
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(false)}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronUp className="size-4" />
+          </Button>
+        </div>
+      </div>
 
-      {/* Day selector */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      {/* Day selector — grid so all 7 fit without scrolling */}
+      <div className="grid grid-cols-7 gap-1.5">
         {[1, 2, 3, 4, 5, 6, 7].map((day) => {
           const dayPlan = promotionPlan.find(d => d.day === day);
           const isDayComplete = (() => {
             if (!dayPlan) return false;
             const hasPlatform = dayPlan.platform;
-            
             if (dayPlan.isManualPost !== false) {
-              // Manual: requires asset, caption, and platform
-              const hasAsset = dayPlan.assetId;
-              const hasCaption = dayPlan.caption;
-              return hasAsset && hasCaption && hasPlatform;
+              return !!(dayPlan.assetId && dayPlan.caption && hasPlatform);
             } else {
-              // Automated: requires only scheduled link and platform (asset is optional)
-              const hasScheduledLink = dayPlan.scheduledPostLink;
-              return hasScheduledLink && hasPlatform;
+              return !!(dayPlan.scheduledPostLink && hasPlatform);
             }
           })();
-          
+          const isActive = currentDay === day;
+
           return (
-            <Button
+            <button
               key={day}
-              variant={currentDay === day ? "default" : "outline"}
-              size="sm"
-              onClick={() => setCurrentDay(day)}
-              className={`flex-shrink-0 ${isDayComplete ? "border-green-500" : ""}`}
+              onClick={() => goToDay(day)}
+              className={`relative flex flex-col items-center py-2 rounded-lg border text-xs font-medium transition-all ${
+                isActive
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : isDayComplete
+                  ? "bg-green-50 text-green-700 border-green-400 hover:bg-green-100"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+              }`}
             >
-              Day {day} {isDayComplete && "✓"}
-            </Button>
+              <span className="text-[10px] opacity-60 font-normal">Day</span>
+              <span className="text-sm font-bold leading-tight">{day}</span>
+              {isDayComplete && (
+                <span className={`text-[9px] mt-0.5 ${isActive ? "text-green-300" : "text-green-600"}`}>✓</span>
+              )}
+            </button>
           );
         })}
       </div>
 
-      {/* Content area - Single day view */}
-      <div className="space-y-4 max-h-[600px] overflow-y-auto">
+      {/* Content area — animated slide on day change */}
+      <div
+        key={animKey}
+        className="space-y-4 max-h-[600px] overflow-y-auto"
+        style={{
+          animation: `slideIn${slideDir === "right" ? "Right" : "Left"} 0.22s ease both`
+        }}
+      >
         {renderDayForm(promotionPlan.find(d => d.day === currentDay)!)}
       </div>
 
-      {/* Start Promotion Button */}
-      <Card className="bg-gray-50 border-gray-300">
-        <CardContent className="p-4">
-          <Button
-            className="w-full"
-            disabled={!isPlanComplete}
-            onClick={handleStartPromotionClick}
-          >
-            <Calendar className="size-4 mr-2" />
-            Start Promotion Today
-          </Button>
-          {!isPlanComplete && (
-            <p className="text-xs text-gray-600 text-center mt-2">
-              Complete all 7 days to start promotion
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <style>{`
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(18px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInLeft {
+          from { opacity: 0; transform: translateX(-18px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
+
 
       {/* Start Promotion Confirmation Dialog */}
       <Dialog open={isStartDialogOpen} onOpenChange={setIsStartDialogOpen}>
@@ -608,30 +754,30 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
 
       {/* Promotion Complete Dialog */}
       <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Promotion Plan Complete</DialogTitle>
-            <DialogDescription>
-              Your promotion plan is fully set up and ready to start.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <p className="text-sm text-green-900">
-                All 7 days have been completed and your promotion plan is ready to start.
-              </p>
+        <DialogContent className="max-w-sm text-center">
+          <div className="flex flex-col items-center gap-4 py-2">
+            <div className="size-16 rounded-full bg-green-100 flex items-center justify-center">
+              <Calendar className="size-8 text-green-600" />
             </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button onClick={handleStartPromotionClick} className="flex-1">
-                Start Promotion
+            <div className="space-y-1.5">
+              <DialogTitle className="text-xl font-bold text-gray-900">
+                Your plan is ready.
+              </DialogTitle>
+              <DialogDescription className="text-sm text-gray-600">
+                All 7 days are set. Your promotion plan is complete and locked in — time to launch it.
+              </DialogDescription>
+            </div>
+            <div className="w-full space-y-2 pt-1">
+              <Button onClick={handleStartPromotionClick} className="w-full h-11 text-base font-semibold">
+                Start Promotion Now
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
+                className="w-full text-gray-500"
                 onClick={() => setShowCompleteDialog(false)}
               >
-                Cancel
+                Not yet
               </Button>
             </div>
           </div>
@@ -640,27 +786,43 @@ export function PromotionPlan({ episode, assets, onUpdateEpisode, onAddAsset }: 
 
       {/* Promotion Incomplete Dialog */}
       <Dialog open={showIncompleteDialog} onOpenChange={setShowIncompleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Promotion Plan Incomplete</DialogTitle>
-            <DialogDescription>
-              Your promotion plan is not fully set up yet.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-sm text-red-900">
-                Please complete all 7 days of your promotion plan before starting.
-              </p>
+        <DialogContent className="max-w-sm text-center">
+          <div className="flex flex-col items-center gap-4 py-2">
+            <div className="size-16 rounded-full bg-amber-100 flex items-center justify-center">
+              <Target className="size-8 text-amber-600" />
             </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowIncompleteDialog(false)}
-              >
-                Close
+            <div className="space-y-1.5">
+              <DialogTitle className="text-xl font-bold text-gray-900">
+                Not quite ready yet
+              </DialogTitle>
+              <DialogDescription className="text-sm text-gray-600">
+                Add content for all 7 days before starting your promotion. Every day needs an asset, caption, and platform.
+              </DialogDescription>
+            </div>
+            <div className="w-full space-y-2 pt-1">
+              {/* Show which days are still missing */}
+              <div className="flex gap-1.5 justify-center flex-wrap">
+                {[1,2,3,4,5,6,7].map(day => {
+                  const dayPlan = promotionPlan.find(d => d.day === day);
+                  const complete = dayPlan && (
+                    dayPlan.isManualPost !== false
+                      ? dayPlan.assetId && dayPlan.caption && dayPlan.platform
+                      : dayPlan.scheduledPostLink && dayPlan.platform
+                  );
+                  return (
+                    <span
+                      key={day}
+                      className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                        complete ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      Day {day} {complete ? "✓" : ""}
+                    </span>
+                  );
+                })}
+              </div>
+              <Button className="w-full mt-2" onClick={() => setShowIncompleteDialog(false)}>
+                Go Back & Complete Plan
               </Button>
             </div>
           </div>

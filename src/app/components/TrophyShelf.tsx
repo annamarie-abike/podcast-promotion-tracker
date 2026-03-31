@@ -1,5 +1,6 @@
-import { Trophy } from "lucide-react";
-import { Episode } from "../context/AppContext";
+import { useState } from "react";
+import { Trophy, Swords, Crown } from "lucide-react";
+import { Episode, Showdown } from "../context/AppContext";
 
 interface TrophyData {
   id: string;
@@ -13,9 +14,11 @@ interface TrophyData {
 
 interface TrophyShelfProps {
   episodes: Episode[];
+  showdowns?: Showdown[];
 }
 
-export function TrophyShelf({ episodes }: TrophyShelfProps) {
+export function TrophyShelf({ episodes, showdowns = [] }: TrophyShelfProps) {
+  const [showAll, setShowAll] = useState(false);
   // Calculate completed episodes (stage === "complete")
   const completedEpisodes = episodes.filter((ep) => ep.stage === "complete");
   const completedCount = completedEpisodes.length;
@@ -236,8 +239,7 @@ export function TrophyShelf({ episodes }: TrophyShelfProps) {
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
-  // Show only the first 6 trophies for a cleaner view
-  const displayTrophies = trophies.slice(0, 6);
+  const displayTrophies = showAll ? trophies : trophies.slice(0, 6);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
@@ -293,9 +295,56 @@ export function TrophyShelf({ episodes }: TrophyShelfProps) {
 
       {/* View All Link */}
       {trophies.length > 6 && (
-        <button className="w-full mt-4 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors">
-          View all {trophies.length} trophies →
+        <button
+          className="w-full mt-4 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+          onClick={() => setShowAll(prev => !prev)}
+        >
+          {showAll ? "Show less ↑" : `View all ${trophies.length} trophies →`}
         </button>
+      )}
+
+      {/* Showdown Winners */}
+      {showdowns.filter(s => s.status === "complete" && s.winnerId).length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Swords className="size-5 text-gray-700" />
+            <h3 className="text-base font-bold text-gray-900">Showdown Winners</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {showdowns
+              .filter(s => s.status === "complete" && s.winnerId)
+              .map(s => {
+                const winner = s.contenders.find(c => c.id === s.winnerId);
+                return (
+                  <div
+                    key={s.id}
+                    className="bg-yellow-50 border border-yellow-300 rounded-lg p-4"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="size-4 text-yellow-600" />
+                      <span className="text-xs font-semibold text-yellow-700 uppercase tracking-wide">Showdown Winner</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900 leading-tight">{s.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Metric: {s.metric}</p>
+                    {winner && (
+                      <div className="mt-2 pt-2 border-t border-yellow-200">
+                        <p className="text-xs text-gray-600 font-medium">Winner</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          Day {winner.dayNumber} — {winner.assetName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {winner.finalStat} {s.metric}
+                        </p>
+                      </div>
+                    )}
+                    {s.reflection1 && (
+                      <p className="text-xs text-gray-600 mt-2 italic">"{s.reflection1}"</p>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
       )}
     </div>
   );

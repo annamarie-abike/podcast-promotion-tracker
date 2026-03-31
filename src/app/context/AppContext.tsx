@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
 export interface PromotionDay {
   day: number;
@@ -35,20 +35,57 @@ export interface Asset {
   addedDate: string;
 }
 
+export interface CustomMetric {
+  id: string;
+  name: string;
+}
+
+export interface ShowdownContender {
+  id: string;
+  dayNumber: number;
+  assetId?: string;
+  assetName?: string;
+  platform?: string;
+  finalStat?: number;
+}
+
+export interface Showdown {
+  id: string;
+  episodeId: string;
+  name: string;
+  metric: string;
+  whatTesting: string;
+  whyMatters?: string;
+  podcastGoals?: string;
+  engagementPlan?: string;
+  contenders: ShowdownContender[];
+  deadline?: string;
+  status: "setup" | "running" | "results" | "complete";
+  startedAt?: string;
+  winnerId?: string;
+  reflection1?: string;
+  reflection2?: string;
+  createdAt: string;
+}
+
 interface AppContextType {
   episodes: Episode[];
   assets: Asset[];
+  showdowns: Showdown[];
+  customMetrics: CustomMetric[];
   addEpisode: (episode: Episode) => void;
   updateEpisode: (id: string, updates: Partial<Episode>) => void;
   addAsset: (asset: Asset) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   deleteAsset: (id: string) => void;
+  addShowdown: (showdown: Showdown) => void;
+  updateShowdown: (id: string, updates: Partial<Showdown>) => void;
+  addCustomMetric: (metric: CustomMetric) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [episodes, setEpisodes] = useState<Episode[]>([
+const DEFAULT_EPISODES: Episode[] = [
     {
       id: "1",
       name: "Episode 12: TY Bello Interview",
@@ -72,9 +109,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       completedDays: [],
       stage: "planning"
     }
-  ]);
+];
 
-  const [assets, setAssets] = useState<Asset[]>([
+const DEFAULT_ASSETS: Asset[] = [
     {
       id: "1",
       name: "TY Bello — Full Recording",
@@ -107,11 +144,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
       type: "folder",
       addedDate: "2025-03-24"
     }
-  ]);
+];
+
+const DEFAULT_METRICS: CustomMetric[] = [];
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [episodes, setEpisodes] = useState<Episode[]>(() => {
+    try {
+      const saved = localStorage.getItem("ppt_episodes");
+      return saved ? JSON.parse(saved) : DEFAULT_EPISODES;
+    } catch {
+      return DEFAULT_EPISODES;
+    }
+  });
+
+  const [assets, setAssets] = useState<Asset[]>(() => {
+    try {
+      const saved = localStorage.getItem("ppt_assets");
+      return saved ? JSON.parse(saved) : DEFAULT_ASSETS;
+    } catch {
+      return DEFAULT_ASSETS;
+    }
+  });
+
+  const [showdowns, setShowdowns] = useState<Showdown[]>(() => {
+    try {
+      const saved = localStorage.getItem("ppt_showdowns");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [customMetrics, setCustomMetrics] = useState<CustomMetric[]>(() => {
+    try {
+      const saved = localStorage.getItem("ppt_custom_metrics");
+      return saved ? JSON.parse(saved) : DEFAULT_METRICS;
+    } catch {
+      return DEFAULT_METRICS;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("ppt_episodes", JSON.stringify(episodes));
+  }, [episodes]);
+
+  useEffect(() => {
+    localStorage.setItem("ppt_assets", JSON.stringify(assets));
+  }, [assets]);
+
+  useEffect(() => {
+    localStorage.setItem("ppt_showdowns", JSON.stringify(showdowns));
+  }, [showdowns]);
+
+  useEffect(() => {
+    localStorage.setItem("ppt_custom_metrics", JSON.stringify(customMetrics));
+  }, [customMetrics]);
 
   const addEpisode = (episode: Episode) => {
     setEpisodes([episode, ...episodes]);
-    
+
     // Automatically add the video URL as an asset if it exists
     if (episode.videoUrl) {
       const newAsset: Asset = {
@@ -143,16 +235,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAssets(assets.filter(asset => asset.id !== id));
   };
 
+  const addShowdown = (showdown: Showdown) => {
+    setShowdowns([showdown, ...showdowns]);
+  };
+
+  const updateShowdown = (id: string, updates: Partial<Showdown>) => {
+    setShowdowns(showdowns.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+
+  const addCustomMetric = (metric: CustomMetric) => {
+    setCustomMetrics([...customMetrics, metric]);
+  };
+
   return (
     <AppContext.Provider
       value={{
         episodes,
         assets,
+        showdowns,
+        customMetrics,
         addEpisode,
         updateEpisode,
         addAsset,
         updateAsset,
-        deleteAsset
+        deleteAsset,
+        addShowdown,
+        updateShowdown,
+        addCustomMetric
       }}
     >
       {children}
